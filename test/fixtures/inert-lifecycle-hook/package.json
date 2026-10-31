@@ -1,0 +1,9 @@
+{
+  "name": "inert-lifecycle-hook",
+  "version": "1.0.0",
+  "description": "Static security-scanner fixture; the install hook only prints text.",
+  "homepage": "https://example.invalid/inert-lifecycle-hook",
+  "scripts": {
+    "postinstall": "node -e \"console.log('fixture only: https://example.invalid')\""
+  }
+}

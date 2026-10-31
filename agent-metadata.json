@@ -1,0 +1,8 @@
+{
+  "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+  "name": "Code Guard",
+  "description": "Development CLI for auditing npm dependency trees, explaining security findings, and attesting report hashes. No public service endpoint is deployed.",
+  "services": [],
+  "active": false,
+  "x402Support": false
+}

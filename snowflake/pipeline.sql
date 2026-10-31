@@ -1,0 +1,57 @@
+-- Code Guard pipeline for Snowflake.
+-- Loads the CSVs that `codeguard scan` writes to .codeguard/snowflake/, then tracks
+-- compromised packages across all loaded scans. Rows have no scan ID, so these views
+-- show everything seen so far, not one scan. Publish dates of packages are not collected,
+-- so publishing anomalies are not detected.
+-- Run PUT from SnowSQL or the Snowflake CLI; Snowsight worksheets do not support it.
+
+CREATE DATABASE IF NOT EXISTS CODE_GUARD;
+USE SCHEMA CODE_GUARD.PUBLIC;
+
+CREATE OR REPLACE FILE FORMAT CG_CSV TYPE = CSV SKIP_HEADER = 1 FIELD_OPTIONALLY_ENCLOSED_BY = '"' NULL_IF = ('');
+CREATE STAGE IF NOT EXISTS CG_STAGE FILE_FORMAT = CG_CSV;
+
+CREATE TABLE IF NOT EXISTS SCAN_PACKAGES (
+  NAME STRING, VERSION STRING, LOCATION STRING, DEPTH INT, DEV BOOLEAN,
+  LOADED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+CREATE TABLE IF NOT EXISTS SCAN_FINDINGS (
+  KIND STRING, ID STRING, SEVERITY STRING, PACKAGE STRING, VERSION STRING, LOCATION STRING, TITLE STRING,
+  LOADED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+CREATE TABLE IF NOT EXISTS OSV_ADVISORIES (
+  ID STRING, SEVERITY STRING, SUMMARY STRING, PUBLISHED TIMESTAMP_TZ, MODIFIED TIMESTAMP_TZ,
+  LOADED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+
+-- Replace the path with the absolute path to your .codeguard/snowflake folder.
+PUT file://.codeguard/snowflake/*.csv @CG_STAGE OVERWRITE = TRUE;
+
+COPY INTO SCAN_PACKAGES (NAME, VERSION, LOCATION, DEPTH, DEV) FROM @CG_STAGE/scan_packages.csv.gz;
+COPY INTO SCAN_FINDINGS (KIND, ID, SEVERITY, PACKAGE, VERSION, LOCATION, TITLE) FROM @CG_STAGE/scan_findings.csv.gz;
+COPY INTO OSV_ADVISORIES (ID, SEVERITY, SUMMARY, PUBLISHED, MODIFIED) FROM @CG_STAGE/osv_advisories.csv.gz;
+
+-- Packages confirmed malicious or flagged critical, most recently seen first.
+CREATE OR REPLACE VIEW COMPROMISED_PACKAGES AS
+SELECT PACKAGE, VERSION, ARRAY_AGG(DISTINCT ID) AS REASONS, COUNT(DISTINCT LOCATION) AS INSTALL_PATHS, MAX(LOADED_AT) AS LAST_SEEN
+FROM SCAN_FINDINGS
+WHERE KIND = 'known-malicious' OR SEVERITY = 'critical'
+GROUP BY PACKAGE, VERSION
+ORDER BY LAST_SEEN DESC;
+
+-- Risky behaviour hidden in transitive dependencies, not direct ones. Depth comes from the
+-- install path, so matching path, name and version gives the right depth across scans.
+-- A package found at several depths appears once, at its deepest.
+CREATE OR REPLACE VIEW DEEP_SUSPICIOUS_PACKAGES AS
+SELECT F.PACKAGE, F.VERSION, F.ID, F.SEVERITY, P.DEPTH
+FROM SCAN_FINDINGS F
+JOIN SCAN_PACKAGES P ON P.LOCATION = F.LOCATION AND P.NAME = F.PACKAGE AND P.VERSION = F.VERSION
+WHERE F.KIND IN ('suspicious-code', 'suspicious-name') AND P.DEPTH >= 2
+QUALIFY ROW_NUMBER() OVER (PARTITION BY F.PACKAGE, F.VERSION, F.ID ORDER BY P.DEPTH DESC, F.LOADED_AT DESC) = 1;
+
+-- Advisories disclosed in the last 30 days, which need the fastest response.
+CREATE OR REPLACE VIEW RECENT_ADVISORIES AS
+SELECT ID, SEVERITY, SUMMARY, PUBLISHED
+FROM OSV_ADVISORIES
+WHERE PUBLISHED >= DATEADD(DAY, -30, CURRENT_TIMESTAMP())
+QUALIFY ROW_NUMBER() OVER (PARTITION BY ID ORDER BY LOADED_AT DESC) = 1;

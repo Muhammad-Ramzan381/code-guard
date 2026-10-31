@@ -1,0 +1,11 @@
+node_modules/
+!test/fixtures/**/node_modules/
+!test/fixtures/**/node_modules/**
+.codeguard/
+.env
+.env.*
+!.env.example
+*.log
+coverage/
+/COORDINATION.md
+.vscode/
