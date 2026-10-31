@@ -75,7 +75,9 @@ Each scan exports `scan_packages.csv`, `scan_findings.csv` and `osv_advisories.c
 
 The data comes from OSV, the freely accessible open-source vulnerability index. The views cover all loaded scans rather than a single scan, and publishing anomalies are not detected because package publish dates are not collected.
 
-<!-- TODO(Ramzan): after running this in Snowflake, add the CoCo prompts used and a screenshot of the views. If you use a Marketplace dataset, name the exact listing here. -->
+CoCo was not used. Snowflake's self-service trial disables AI features until a credit card is added, and the organizers confirmed that this part could be skipped.
+
+<!-- TODO(Ramzan): after running this in Snowflake, add a screenshot of the views. If you use a Marketplace dataset, name the exact listing here. -->
 
 ## Solana Agent Registry
 
